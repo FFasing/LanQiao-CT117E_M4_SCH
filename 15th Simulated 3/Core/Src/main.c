@@ -1,0 +1,391 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2025 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include "adc.h"
+#include "tim.h"
+#include "usart.h"
+#include "gpio.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+
+/* USER CODE BEGIN PV */
+
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+/* USER CODE BEGIN PFP */
+
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+u8 lcd_mod=0;
+double V_R37,V_R38;
+double R37_H=2.2,R37_L=1.2,R38_H=3.0,R38_L=1.4;
+double PASS_R37=1.1,PASS_R38=2.2;
+int ALL_NUM=0,R37_ENTER_NUM=0,R38_ENTER_NUM=0;
+u8 B1,B11,B2,B22,B3,B33,B4,B44;
+u8 B2_INDEX=0;
+u8 rx[5];
+u8 rx_len=0;
+int R37_TIM_1S=0,R37_TIM_1S_CON=0;
+int R38_TIM_1S=0,R38_TIM_1S_CON=0;
+double R37_PASS_MEMORY[20],R38_PASS_MEMORY[20];
+void lcd_proc(void)
+{
+	char text[21];
+		sprintf(text,"%s    ",rx);
+		LCD_DisplayStringLine(Line0, (unsigned char *)text);
+	if(lcd_mod==0)
+	{
+		sprintf(text,"       GOODS     ");
+		LCD_DisplayStringLine(Line1, (unsigned char *)text);
+		sprintf(text,"     R37:%.2fV     ",V_R37);
+		LCD_DisplayStringLine(Line3, (unsigned char *)text);
+		sprintf(text,"     R38:%.2fV     ",V_R38);
+		LCD_DisplayStringLine(Line4, (unsigned char *)text);
+	}
+	if(lcd_mod==1)
+	{
+		sprintf(text,"      STANDARD     ");
+		LCD_DisplayStringLine(Line1, (unsigned char *)text);
+		sprintf(text,"    SR37:%.1f-%.1f     ",R37_L,R37_H);
+		LCD_DisplayStringLine(Line3, (unsigned char *)text);
+		sprintf(text,"    SR38:%.1f-%.1f     ",R38_L,R38_H);
+		LCD_DisplayStringLine(Line4, (unsigned char *)text);
+	}
+	if(lcd_mod==2)
+	{
+		sprintf(text,"        PASS     ");
+		LCD_DisplayStringLine(Line1, (unsigned char *)text);
+			int i;
+			R37_ENTER_NUM=0;
+			R38_ENTER_NUM=0;
+			for(i=0;i<=ALL_NUM-R38_ENTER_NUM;i++)
+			{
+				if(R37_L<=R37_PASS_MEMORY[i]&&R37_H>=R37_PASS_MEMORY[i])
+					R37_ENTER_NUM++;
+			}
+			for(i=0;i<=ALL_NUM-R37_ENTER_NUM;i++)
+			{
+				if(R38_L<=R38_PASS_MEMORY[i]&&R38_H>=R38_PASS_MEMORY[i])
+					R38_ENTER_NUM++;
+			}
+		PASS_R37=R37_ENTER_NUM*1.0/(ALL_NUM-R38_ENTER_NUM)*100.0;
+		PASS_R38=R38_ENTER_NUM*1.0/(ALL_NUM-R37_ENTER_NUM)*100.0;
+		if(ALL_NUM-R38_ENTER_NUM==0) PASS_R37=0;
+		if(ALL_NUM-R37_ENTER_NUM==0) PASS_R38=0;
+		sprintf(text,"    PR37:%.1f%%     ",PASS_R37);
+		LCD_DisplayStringLine(Line3, (unsigned char *)text);
+		sprintf(text,"    PR38:%.1f%%     ",PASS_R38);
+		LCD_DisplayStringLine(Line4, (unsigned char *)text);
+	}
+}
+void key_proc(void)
+{
+	if(HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_0)==0) B1=1;
+	else B1=0;
+	if(B1==1&&B11==0)
+	{
+		B11=1;
+		lcd_mod++;
+		if(lcd_mod==3) lcd_mod=0;
+	}if(B11==1&&B1==0) B11=0;
+	
+	if(HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_1)==0) B2=1;
+	else B2=0;
+	if(B2==1&&B22==0)
+	{
+		if(lcd_mod==0)
+		{
+			ALL_NUM++;
+			if(R37_L<=V_R37&&R37_H>=V_R37)
+			{
+				R37_PASS_MEMORY[R37_ENTER_NUM]=V_R37;
+				R37_ENTER_NUM++;
+				R37_TIM_1S_CON=1;
+			}
+		}
+		if(lcd_mod==1)
+		{
+			B2_INDEX++;
+			if(B2_INDEX==4) B2_INDEX=0;
+		}
+		B22=1;
+	}if(B22==1&&B2==0) B22=0;
+	
+	if(HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_2)==0) B3=1;
+	else B3=0;
+	if(B3==1&&B33==0)
+	{
+		if(lcd_mod==0)
+		{
+			ALL_NUM++;
+			if(R38_L<=V_R38&&R38_H>=V_R38)
+			{
+				R38_PASS_MEMORY[R38_ENTER_NUM]=V_R38;
+				R38_ENTER_NUM++;
+				R38_TIM_1S_CON=1;
+			}
+		}
+		if(lcd_mod==1)
+		{
+			if(B2_INDEX==0) R37_H+=0.2;
+			else if(B2_INDEX==1) R37_L+=0.2;
+			else if(B2_INDEX==2) R38_H+=0.2;
+			else if(B2_INDEX==3) R38_L+=0.2;
+			if(R37_H>3.1) R37_H=2.2;
+			if(R38_H>3.1) R38_H=2.2;
+			if(R37_L>2.1) R37_L=1.2;
+			if(R38_L>2.1) R38_L=1.2;
+		}
+		B33=1;
+	}if(B33==1&&B3==0) B33=0;
+	
+	if(HAL_GPIO_ReadPin(GPIOA,GPIO_PIN_0)==0) B4=1;
+	else B4=0;
+	if(B4==1&&B44==0)
+	{
+		B44=1;
+		if(lcd_mod==1)
+		{
+			if(B2_INDEX==0) R37_H-=0.2;
+			else if(B2_INDEX==1) R37_L-=0.2;
+			else if(B2_INDEX==2) R38_H-=0.2;
+			else if(B2_INDEX==3) R38_L-=0.2;
+			if(R37_H<2.1) R37_H=3.0;
+			if(R38_H<2.1) R38_H=3.0;
+			if(R37_L<1.1) R37_L=2.0;
+			if(R38_L<1.1) R38_L=2.0;
+		}
+		if(lcd_mod==2)
+		{
+			ALL_NUM=R37_ENTER_NUM=R38_ENTER_NUM=0;
+		}
+	}if(B44==1&&B4==0) B44=0;
+}
+void uart_proc(void)
+{
+	uint8_t text[15];
+	if(strcmp((char *)rx,"\0")!=0)
+	{
+		if(strcmp((char *)rx,"R37")==0)
+		{
+			sprintf((char *)text,"R37:%d,%d,%.1f%%",ALL_NUM,R37_ENTER_NUM,PASS_R37);
+			HAL_UART_Transmit(&huart1,(uint8_t *)text,strlen((char*)text),HAL_MAX_DELAY);
+		}
+		if(strcmp((char *)rx,"R38")==0)
+		{
+			sprintf((char *)text,"R38:%d,%d,%.1f%%",ALL_NUM,R38_ENTER_NUM,PASS_R38);
+			HAL_UART_Transmit(&huart1,(uint8_t *)text,strlen((char*)text),HAL_MAX_DELAY);
+		}
+		memset(rx,'\0',sizeof(rx));
+	}
+}
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	if(htim->Instance==TIM17)
+	{
+		if(R37_TIM_1S_CON==1)
+			if(++R37_TIM_1S==1000)
+			{
+				R37_TIM_1S=0;
+				R37_TIM_1S_CON=0;
+			}
+		if(R38_TIM_1S_CON==1)
+			if(++R38_TIM_1S==1000)
+			{
+				R38_TIM_1S=0;
+				R38_TIM_1S_CON=0;
+			}
+	}
+}
+
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_ADC1_Init();
+  MX_ADC2_Init();
+  MX_USART1_UART_Init();
+  MX_TIM17_Init();
+  /* USER CODE BEGIN 2 */
+	LCD_Init();	
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+	LCD_SetBackColor(Black);
+	LCD_SetTextColor(White);
+	LCD_Clear(Black);
+	__HAL_UART_ENABLE_IT(&huart1,UART_IT_IDLE);
+	__HAL_UART_ENABLE_IT(&huart1,UART_IT_RXNE);
+	HAL_TIM_Base_Start_IT(&htim17);
+  while (1)
+  {
+	  HAL_ADC_Start(&hadc1);
+	  V_R38=HAL_ADC_GetValue(&hadc1)/4095.0*3.3;
+	  HAL_ADC_Start(&hadc2);
+	  V_R37=HAL_ADC_GetValue(&hadc2)/4095.0*3.3;
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+	  lcd_proc();key_proc();uart_proc();
+	  
+	  HAL_GPIO_WritePin(GPIOC,(uint16_t)0xff00,1);
+	  if(R37_TIM_1S_CON==1)	HAL_GPIO_WritePin(GPIOC,(uint16_t)0x0100,0);
+	  if(R38_TIM_1S_CON==1)	HAL_GPIO_WritePin(GPIOC,(uint16_t)0x0200,0);
+	  if(lcd_mod==0) HAL_GPIO_WritePin(GPIOC,(uint16_t)0x0400,0);
+	  if(lcd_mod==1) HAL_GPIO_WritePin(GPIOC,(uint16_t)0x0800,0);
+	  if(lcd_mod==2) HAL_GPIO_WritePin(GPIOC,(uint16_t)0x1000,0);
+	  HAL_GPIO_WritePin(GPIOD,GPIO_PIN_2,1);
+	  HAL_GPIO_WritePin(GPIOD,GPIO_PIN_2,0);
+  }
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+
+  /** Configure the main internal regulator output voltage
+  */
+  HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1);
+
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = RCC_PLLM_DIV3;
+  RCC_OscInitStruct.PLL.PLLN = 20;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
+  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/* USER CODE BEGIN 4 */
+
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+  __disable_irq();
+  while (1)
+  {
+  }
+  /* USER CODE END Error_Handler_Debug */
+}
+
+#ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */
